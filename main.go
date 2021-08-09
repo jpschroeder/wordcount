@@ -62,6 +62,7 @@ func readWord(reader *bufio.Reader) (string, error) {
 		ch, _, err = reader.ReadRune()
 	}
 
+	reader.UnreadRune()
 	return sb.String(), err
 }
 
