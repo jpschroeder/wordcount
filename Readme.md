@@ -27,6 +27,7 @@ you:     5
 
 ```
 Enter text to capture word counts.
+Words will be removed from the count after 1 minute.
 The following keywords will not be counted (beginning with '-')
 -stats: print statistics
 -reset: reset statistics

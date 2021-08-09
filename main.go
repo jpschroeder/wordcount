@@ -9,14 +9,15 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 )
 
 //==============================================================================
 
-func countWords(rd io.Reader) (Stats, error) {
+func countWords(rd io.Reader) (*Stats, error) {
 	reader := bufio.NewReader(rd)
-	stats := make(Stats)
+	stats := NewStats()
 
 	// read until 'exit' or io.EOF
 	for {
@@ -28,7 +29,7 @@ func countWords(rd io.Reader) (Stats, error) {
 			case "-help":
 				help()
 			case "-reset":
-				stats = make(Stats)
+				stats = NewStats()
 			case "-exit":
 				return stats, nil
 			default:
@@ -82,14 +83,60 @@ func isWordChar(ch rune) bool {
 
 //==============================================================================
 
-type Stats map[string]int
+type Stats struct {
+	entries []timeEntry
+	counts  map[string]int
+}
+
+type timeEntry struct {
+	word  string
+	added time.Time
+}
+
+func NewStats() *Stats {
+	return &Stats{
+		entries: make([]timeEntry, 0),
+		counts:  make(map[string]int),
+	}
+}
 
 // Add a single count of 'word' to the statistics
-func (s Stats) Add(word string) {
-	if _, exists := s[word]; !exists {
-		s[word] = 0
+func (s *Stats) Add(word string) {
+	s.AddTime(word, time.Now())
+}
+
+func (s *Stats) AddTime(word string, added time.Time) {
+	s.entries = append(s.entries, timeEntry{word, added})
+
+	if _, exists := s.counts[word]; !exists {
+		s.counts[word] = 0
 	}
-	s[word]++
+	s.counts[word]++
+}
+
+// Remove entries older than a minute
+func (s *Stats) RemoveOldEntries() {
+	oneMinuteAgo := time.Now().Add(-1 * time.Minute)
+	var i int
+	for i = 0; i < len(s.entries); i++ {
+		if s.entries[i].added.After(oneMinuteAgo) {
+			break
+		}
+		s.counts[s.entries[i].word]--
+		if s.counts[s.entries[i].word] == 0 {
+			delete(s.counts, s.entries[i].word)
+		}
+	}
+	s.entries = s.entries[i:]
+}
+
+func (s *Stats) Map() map[string]int {
+	s.RemoveOldEntries()
+	return s.counts
+}
+
+func (s *Stats) String() string {
+	return PrettyPrint(s.Map())
 }
 
 // Pretty print the word counts, sorted and padded. Example:
@@ -98,19 +145,23 @@ func (s Stats) Add(word string) {
 // how:    10
 // are:     5
 // you:     5
-func (s Stats) String() string {
+func PrettyPrint(s map[string]int) string {
+	if len(s) == 0 {
+		return "-- no entries --"
+	}
+
 	// extract entries for sorting
-	type entry struct {
+	type countEntry struct {
 		word  string
 		count int
 	}
-	words := make([]entry, len(s))
+	words := make([]countEntry, len(s))
 
 	// determine max length for padding
 	var maxWord, maxDigits, i int
 
 	for word, count := range s {
-		words[i] = entry{word, count}
+		words[i] = countEntry{word, count}
 		if len(word) > maxWord {
 			maxWord = len(word)
 		}
@@ -136,7 +187,8 @@ func (s Stats) String() string {
 		line := fmt.Sprintf("%s: %*d\n", entry.word, padding, entry.count)
 		sb.WriteString(line)
 	}
-	return sb.String()
+	ret := sb.String()
+	return ret[:len(ret)-1] // trim the last newline
 }
 
 //==============================================================================
@@ -150,6 +202,7 @@ func help() {
 		return
 	}
 	fmt.Printf(`Enter text to capture word counts.
+Words will be removed from the count after 1 minute.
 The following keywords will not be counted (beginning with '-')
 -stats: print statistics
 -reset: reset statistics
